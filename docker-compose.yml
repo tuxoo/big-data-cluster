@@ -1,0 +1,377 @@
+version: "3.5"
+services:
+
+#master node
+  master:
+    container_name: master-big-data-cluster
+    image: panovvv/hadoop-hive-spark:2.5.2
+    restart: always
+    hostname: master
+    environment:
+      HADOOP_NODE: namenode
+      SPARK_PUBLIC_DNS: localhost
+      SPARK_LOCAL_IP: 172.28.1.1
+      SPARK_MASTER_HOST: 172.28.1.1
+      SPARK_LOCAL_HOSTNAME: master
+    expose:
+      - "1-65535"
+    ports:
+      - "8080:8080" # Spark Master Web UI
+      - "4040:4040" # Spark job Web UI: increments for each successive job
+      - "4041:4041" # Spark job Web UI: increments for each successive job
+      - "4042:4042" # Spark job Web UI: increments for each successive job
+      - "4043:4043" # Spark job Web UI: increments for each successive job
+      - "18080:18080" # Spark History server
+      - "8088:8088" # YARN UI
+      - "9870:9870" # Hadoop namenode UI
+      - "9868:9868" # Hadoop secondary namenode UI
+    volumes:
+      - ./volumes/big-data-cluster-master/data:/data
+      - ./cities.csv:/big-data-cluster/cities.csv
+      - ./target/big-data-demo-0.0.1-jar-with-dependencies.jar:/big-data-cluster/big-data-demo-0.0.1-jar-with-dependencies.jar # need package maven project
+    healthcheck:
+      test: [ "CMD-SHELL", "hdfs dfs -mkdir /big-data-cluster && hdfs dfs -copyFromLocal /big-data-cluster/cities.csv /big-data-cluster/cities.csv" ]
+      interval: 1s
+      timeout: 60s
+      retries: 1
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.1
+    extra_hosts:
+      - "slave-0:172.28.1.2"
+      - "slave-1:172.28.1.3"
+      - "slave-2:172.28.1.4"
+      - "zeppelin:172.28.1.5"
+      - "livy:172.28.1.6"
+
+#slave node 0
+  slave-0:
+    container_name: slave-0-big-data-cluster
+    image: panovvv/hadoop-hive-spark:2.5.2
+    restart: always
+    hostname: slave-0
+    environment:
+      SPARK_MASTER_ADDRESS: spark://master:7077
+      SPARK_WORKER_PORT: 8881
+      SPARK_WORKER_WEBUI_PORT: 8081
+      SPARK_PUBLIC_DNS: localhost
+      SPARK_LOCAL_HOSTNAME: slave-0
+      SPARK_LOCAL_IP: 172.28.1.2
+      SPARK_MASTER_HOST: 172.28.1.1
+      HADOOP_NODE: datanode
+    expose:
+      - "1-65535"
+    ports:
+      - "9864:9864" # Hadoop datanode UI
+      - "8081:8081" #Spark worker UI
+    volumes:
+      - ./volumes/big-data-cluster-slave-0/data:/data
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.2
+    extra_hosts:
+      - "master:172.28.1.1"
+      - "slave-1:172.28.1.3"
+      - "slave-2:172.28.1.4"
+      - "zeppelin:172.28.1.5"
+      - "livy:172.28.1.6"
+
+#slave node 1
+  slave-1:
+    container_name: slave-1-big-data-cluster
+    image: panovvv/hadoop-hive-spark:2.5.2
+    restart: always
+    hostname: slave-1
+    environment:
+      SPARK_MASTER_ADDRESS: spark://master:7077
+      SPARK_WORKER_PORT: 8882
+      SPARK_WORKER_WEBUI_PORT: 8082
+      SPARK_PUBLIC_DNS: localhost
+      SPARK_LOCAL_HOSTNAME: slave-1
+      SPARK_LOCAL_IP: 172.28.1.3
+      SPARK_MASTER_HOST: 172.28.1.1
+      HADOOP_NODE: datanode
+    ports:
+      - "9865:9864" # Hadoop datanode UI
+      - "8082:8082" # Spark worker UI
+    expose:
+      - "1-65535"
+    volumes:
+      - ./volumes/big-data-cluster-slave-1/data:/data
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.3
+    extra_hosts:
+      - "master:172.28.1.1"
+      - "slave-0:172.28.1.2"
+      - "slave-2:172.28.1.4"
+      - "zeppelin:172.28.1.5"
+      - "livy:172.28.1.6"
+
+#slave node 2
+  slave-2:
+    container_name: slave-2-big-data-cluster
+    image: panovvv/hadoop-hive-spark:2.5.2
+    restart: always
+    hostname: slave-2
+    environment:
+      SPARK_MASTER_ADDRESS: spark://master:7077
+      SPARK_WORKER_PORT: 8883
+      SPARK_WORKER_WEBUI_PORT: 8083
+      SPARK_PUBLIC_DNS: localhost
+      SPARK_LOCAL_HOSTNAME: slave-2
+      SPARK_LOCAL_IP: 172.28.1.4
+      SPARK_MASTER_HOST: 172.28.1.1
+      HADOOP_NODE: datanode
+    expose:
+      - "1-65535"
+    ports:
+      - "9866:9864" # Hadoop datanode UI
+      - "8083:8083" # Spark worker UI
+    volumes:
+      - ./volumes/big-data-cluster-slave-2/data:/data
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.4
+    extra_hosts:
+      - "master:172.28.1.1"
+      - "slave-0:172.28.1.2"
+      - "slave-1:172.28.1.3"
+      - "zeppelin:172.28.1.5"
+      - "livy:172.28.1.6"
+#livy
+  livy:
+    container_name: livy-big-data-cluster
+    image: panovvv/livy:2.5.2
+    restart: always
+    hostname: livy
+    depends_on:
+      - master
+      - slave-0
+      - slave-1
+      - slave-2
+    volumes:
+      - ./volumes/big-data-cluster-livy/batches:/livy_batches
+      - ./volumes/big-data-cluster-livy/data:/data
+    environment:
+      - SPARK_MASTER=yarn
+      - LOCAL_DIR_WHITELIST=/data/batches/
+    expose:
+      - "1-65535"
+    ports:
+      - "8998:8998"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.6
+    extra_hosts:
+      - "master:172.28.1.1"
+      - "slave-0:172.28.1.2"
+      - "slave-1:172.28.1.3"
+      - "slave-2:172.28.1.4"
+      - "zeppelin:172.28.1.5"
+
+#zeppelin
+  zeppelin:
+    container_name: zeppelin-big-data-cluster
+    image: panovvv/zeppelin-bigdata:2.5.2
+    restart: always
+    hostname: zeppelin
+    depends_on:
+      - master
+      - slave-0
+      - slave-1
+      - livy
+    volumes:
+      - ./volumes/big-data-cluster-zeppelin/notebooks:/zeppelin_notebooks
+      - ./volumes/big-data-cluster-zeppelin/data:/data
+      - ./volumes/big-data-cluster-zeppelin/conf:/usr/zeppelin/conf
+    expose:
+      - "1-65535"
+    ports:
+      - "8890:8890"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.5
+    extra_hosts:
+      - "master:172.28.1.1"
+      - "slave-0:172.28.1.2"
+      - "slave-1:172.28.1.3"
+      - "slave-2:172.28.1.4"
+      - "livy:172.28.1.6"
+
+#postgres
+  postgres:
+    container_name: postgres-big-data-cluster
+    image: postgres:11.8
+    restart: always
+    hostname: postgresql
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./countries.csv:/init/countries.csv
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./volumes/big-data-cluster-postgres/data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    expose:
+      - "1-65535"
+    ports:
+      - "5432:5432"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.7
+    extra_hosts:
+      - "airflow:172.28.1.8"
+
+#airflow
+  airflow:
+    container_name: airflow-big-data-cluster
+    image: docker.io/bitnami/airflow:2.2.1
+    restart: always
+    hostname: airflow
+    volumes:
+      - ./volumes/big-data-cluster-airflow-dags:/opt/bitnami/airflow/dags
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW_DATABASE_NAME: airflow
+      AIRFLOW_DATABASE_USERNAME: postgres
+      AIRFLOW_DATABASE_PASSWORD: postgres
+      AIRFLOW_EXECUTOR: LocalExecutor
+      AIRFLOW_USERNAME: airflow
+      AIRFLOW_PASSWORD: airflow
+      AIRFLOW_LOAD_EXAMPLES: "no"
+    expose:
+      - "1-65535"
+    ports:
+      - '8085:8080'
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.8
+    extra_hosts:
+      - "postgres:172.28.1.7"
+
+#airflow
+  airflow-scheduler:
+    container_name: airflow-scheduler-big-data-cluster
+    image: docker.io/bitnami/airflow-scheduler:2.2.1
+    restart: always
+    volumes:
+      - ./volumes/big-data-cluster-airflow-dags:/opt/bitnami/airflow/dags
+    depends_on:
+      - airflow
+      - postgres
+    environment:
+      AIRFLOW_DATABASE_NAME: airflow
+      AIRFLOW_DATABASE_USERNAME: postgres
+      AIRFLOW_DATABASE_PASSWORD: postgres
+      AIRFLOW_EXECUTOR: LocalExecutor
+      AIRFLOW_WEBSERVER_HOST: airflow
+      AIRFLOW_USERNAME: airflow
+      AIRFLOW_PASSWORD: airflow
+      AIRFLOW_LOAD_EXAMPLES: "no"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.14
+    extra_hosts:
+      - "postgres:172.28.1.7"
+      - "airflow:172.28.1.8"
+
+#clickhouse-zookeeper
+  zookeeper:
+    container_name: zookeeper-big-data-cluster
+    image: zookeeper:3.5
+    restart: always
+    hostname: zookeeper
+    volumes:
+      - ./volumes/big-data-cluster-zookeeper/data:/data
+      - ./volumes/big-data-cluster-zookeeper/datalog:/datalog
+      - ./volumes/big-data-cluster-zookeeper/logs:/logs
+    expose:
+      - "1-65535"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.9
+    extra_hosts:
+      - "clickhouse-0:172.28.1.10"
+      - "clickhouse-1:172.28.1.11"
+      - "clickhouse-2:172.28.1.12"
+      - "clickhouse-3:172.28.1.13"
+
+#clickhouse-0
+  clickhouse-0:
+    container_name: clickhouse-0-big-data-cluster
+    image: yandex/clickhouse-server:21.3.11
+    restart: always
+    hostname: clickhouse-0
+    volumes:
+      - ./volumes/big-data-cluster-clickhouse/0/config:/etc/clickhouse-server
+      - ./volumes/big-data-cluster-clickhouse/0/data:/var/lib/clickhouse
+    depends_on:
+      - zookeeper
+    ports:
+      - "8123:8123"
+    expose:
+      - "1-65535"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.10
+
+#clickhouse-1
+  clickhouse-1:
+    container_name: clickhouse-1-big-data-cluster
+    image: yandex/clickhouse-server:21.3.11
+    restart: always
+    hostname: clickhouse-1
+    volumes:
+      - ./volumes/big-data-cluster-clickhouse/1/config:/etc/clickhouse-server
+      - ./volumes/big-data-cluster-clickhouse/1/data:/var/lib/clickhouse
+    depends_on:
+      - zookeeper
+    expose:
+      - "1-65535"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.11
+
+#clickhouse-2
+  clickhouse-2:
+    container_name: clickhouse-2-big-data-cluster
+    image: yandex/clickhouse-server:21.3.11
+    restart: always
+    hostname: clickhouse-2
+    volumes:
+      - ./volumes/big-data-cluster-clickhouse/2/config:/etc/clickhouse-server
+      - ./volumes/big-data-cluster-clickhouse/2/data:/var/lib/clickhouse
+    depends_on:
+      - zookeeper
+    expose:
+      - "1-65535"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.12
+
+#clickhouse-3
+  clickhouse-3:
+    container_name: clickhouse-3-big-data-cluster
+    image: yandex/clickhouse-server:21.3.11
+    restart: always
+    hostname: clickhouse-3
+    volumes:
+      - ./volumes/big-data-cluster-clickhouse/3/config:/etc/clickhouse-server
+      - ./volumes/big-data-cluster-clickhouse/3/data:/var/lib/clickhouse
+    depends_on:
+      - zookeeper
+    expose:
+      - "1-65535"
+    networks:
+      big-data-cluster-net:
+        ipv4_address: 172.28.1.13
+
+networks:
+  big-data-cluster-net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
